@@ -10,28 +10,35 @@ require('dotenv').config();
 
 const { connectDB } = require('./config/database');
 const { setupSocketIO } = require('./config/socketio');
-const logger = require('./utils/logger');
+const { logger } = require('./utils/logger');
 
 // Import routes
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
-const automationRoutes = require('./routes/automations');
-const dataRoutes = require('./routes/data');
-const aiRoutes = require('./routes/ai');
-const dashboardRoutes = require('./routes/dashboard');
-const webhookRoutes = require('./routes/webhooks');
-const whatsappRoutes = require('./routes/whatsapp');
+// Temporarily comment out problematic routes
+// const automationRoutes = require('./routes/automations');
+// const dataRoutes = require('./routes/data');
+// const aiRoutes = require('./routes/ai');
+// const dashboardRoutes = require('./routes/dashboard');
+// const webhookRoutes = require('./routes/webhooks');
+// const whatsappRoutes = require('./routes/whatsapp');
 
 // Initialize Google Auth Service after environment variables are loaded
-// const googleAuthService = require('./services/googleAuthService');
+const googleAuthService = require('./services/googleAuthService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Security middleware
 app.use(helmet());
+
+// Parse CORS_ORIGIN from env (can be comma-separated string or array)
+const corsOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
+  : ['http://localhost:3000', 'http://localhost:3002'];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+  origin: corsOrigins,
   credentials: true
 }));
 
@@ -54,6 +61,9 @@ app.use(session({
 // Passport middleware
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Setup Google Auth Service
+googleAuthService.setupPassport();
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -80,19 +90,20 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
-app.use('/api/automations', automationRoutes);
-app.use('/api/data', dataRoutes);
-app.use('/api/ai', aiRoutes);
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/webhooks', webhookRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
+// Temporarily comment out problematic routes
+// app.use('/api/automations', automationRoutes);
+// app.use('/api/data', dataRoutes);
+// app.use('/api/ai', aiRoutes);
+// app.use('/api/dashboard', dashboardRoutes);
+// app.use('/api/webhooks', webhookRoutes);
+// app.use('/api/whatsapp', whatsappRoutes);
 
-// Swagger documentation
-if (process.env.NODE_ENV !== 'production') {
-  const swaggerUi = require('swagger-ui-express');
-  const swaggerDocument = require('./docs/swagger.json');
-  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
-}
+// Swagger documentation (temporarily disabled)
+// if (process.env.NODE_ENV !== 'production') {
+//   const swaggerUi = require('swagger-ui-express');
+//   const swaggerDocument = require('./docs/swagger.json');
+//   app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+// }
 
 // Error handling middleware
 app.use((err, req, res, next) => {

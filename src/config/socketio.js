@@ -1,6 +1,6 @@
 const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken');
-const logger = require('../utils/logger');
+const jwtTokenUtil = require('../utils/jwtTokenUtil');
+const { logger } = require('../utils/logger');
 
 let io;
 
@@ -21,12 +21,18 @@ const setupSocketIO = (server) => {
         return next(new Error('Authentication error: No token provided'));
       }
 
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwtTokenUtil.verifyToken(token);
+      
+      // Ensure it's an access token
+      if (decoded.type && decoded.type !== 'access') {
+        return next(new Error('Authentication error: Invalid token type'));
+      }
+      
       socket.userId = decoded.userId;
       socket.userRole = decoded.role;
       next();
     } catch (error) {
-      next(new Error('Authentication error: Invalid token'));
+      next(new Error(`Authentication error: ${error.message}`));
     }
   });
 

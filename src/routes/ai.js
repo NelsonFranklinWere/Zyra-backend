@@ -1,69 +1,58 @@
 const express = require('express');
-const { body, validationResult } = require('express-validator');
+const { authMiddleware } = require('../middleware/auth');
 const aiController = require('../controllers/aiController');
-const authMiddleware = require('../middleware/auth');
+const { rateLimiter } = require('../middleware/rateLimiter');
 
 const router = express.Router();
 
-// Validation rules
-const cvValidation = [
-  body('personalInfo').isObject().withMessage('Personal information is required'),
-  body('personalInfo.firstName').notEmpty().withMessage('First name is required'),
-  body('personalInfo.lastName').notEmpty().withMessage('Last name is required'),
-  body('personalInfo.email').isEmail().withMessage('Valid email is required'),
-  body('experience').isArray().withMessage('Experience must be an array'),
-  body('education').isArray().withMessage('Education must be an array'),
-  body('skills').isArray().withMessage('Skills must be an array')
-];
-
-const socialPostValidation = [
-  body('content').isObject().withMessage('Content is required'),
-  body('content.theme').notEmpty().withMessage('Content theme is required'),
-  body('platform').isIn(['linkedin', 'twitter', 'instagram', 'facebook']).withMessage('Valid platform is required')
-];
-
-const whatsappValidation = [
-  body('message').notEmpty().withMessage('Message is required'),
-  body('context').isObject().optional()
-];
-
-const insightsValidation = [
-  body('data').isObject().withMessage('Data is required'),
-  body('analysisType').isString().optional()
-];
-
-const audienceValidation = [
-  body('criteria').isObject().withMessage('Targeting criteria is required'),
-  body('criteria.age_range').isObject().optional(),
-  body('criteria.interests').isArray().optional(),
-  body('criteria.location').isString().optional()
-];
-
-// AI Routes - All require authentication
+// Apply authentication middleware to all routes
 router.use(authMiddleware);
 
-// CV Builder
-router.post('/cv', cvValidation, aiController.generateCV);
+// Apply rate limiting for AI endpoints
+router.use(rateLimiter);
 
-// Social Media Generator
-router.post('/social', socialPostValidation, aiController.generateSocialPost);
+// AI Analysis Routes
+router.post('/analyze', aiController.analyze);
+router.get('/analysis/:id', aiController.getAnalysis);
 
-// WhatsApp Automation
-router.post('/whatsapp', whatsappValidation, aiController.processWhatsAppMessage);
+// AI Generation Routes
+router.post('/generate/cv', aiController.generateCV);
+router.post('/generate/social', aiController.generateSocialContent);
+router.post('/generate/persona', aiController.generatePersona);
 
-// Data Insights
-router.post('/insights', insightsValidation, aiController.generateInsights);
+// Feedback and History
+router.post('/feedback/:id', aiController.provideFeedback);
+router.get('/history', aiController.getGenerationHistory);
 
-// Audience Targeting
-router.post('/audience', audienceValidation, aiController.generateAudienceSegments);
+// AI Chat endpoint
+router.post('/chat', async (req, res) => {
+  try {
+    const { message, context, mode } = req.body;
+    const { tenantId } = req.user;
 
-// AI Generations History
-router.get('/generations', aiController.getAIGenerations);
+    // This would integrate with the AI service
+    const response = await aiService.processChatMessage({
+      message,
+      context,
+      mode,
+      tenantId
+    });
 
-// AI Performance Stats
-router.get('/performance', aiController.getAIPerformance);
-
-// Update AI Preferences
-router.put('/preferences', aiController.updateAIPreferences);
+    res.json({
+      success: true,
+      response: {
+        content: response.content,
+        type: response.type,
+        metadata: response.metadata
+      }
+    });
+  } catch (error) {
+    console.error('AI chat error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Chat processing failed' 
+    });
+  }
+});
 
 module.exports = router;

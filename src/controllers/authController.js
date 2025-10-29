@@ -1,19 +1,15 @@
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const jwtTokenUtil = require('../utils/jwtTokenUtil');
 const { db } = require('../config/database');
 const { validationResult } = require('express-validator');
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 const crypto = require('crypto');
-// const otpService = require('../services/otpService');
-// const googleAuthService = require('../services/googleAuthService');
+const otpService = require('../services/otpService');
+const googleAuthService = require('../services/googleAuthService');
 
-// Generate JWT token
+// Generate JWT token (backward compatibility wrapper)
 const generateToken = (userId, role = 'user') => {
-  return jwt.sign(
-    { userId, role },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-  );
+  return jwtTokenUtil.generateToken(userId, role);
 };
 
 // Register new user
@@ -43,16 +39,12 @@ const register = async (req, res) => {
     const saltRounds = 12;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
-    // Generate verification token
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-
     // Create user
     const [user] = await db('users').insert({
       email,
       password_hash: passwordHash,
       first_name: firstName,
       last_name: lastName,
-      verification_token: verificationToken,
       preferences: {
         theme: 'dark',
         notifications: true,
@@ -60,8 +52,8 @@ const register = async (req, res) => {
       }
     }).returning(['id', 'email', 'first_name', 'last_name', 'role', 'is_active', 'is_verified', 'created_at']);
 
-    // Generate token
-    const token = generateToken(user.id, user.role);
+    // Generate token pair (access + refresh)
+    const tokenPair = jwtTokenUtil.generateTokenPair(user.id, user.role);
 
     logger.info(`New user registered: ${email}`);
 
@@ -70,7 +62,7 @@ const register = async (req, res) => {
       message: 'User registered successfully',
       data: {
         user,
-        token
+        ...tokenPair
       }
     });
 
@@ -123,8 +115,8 @@ const login = async (req, res) => {
       });
     }
 
-    // Generate token
-    const token = generateToken(user.id, user.role);
+    // Generate token pair (access + refresh)
+    const tokenPair = jwtTokenUtil.generateTokenPair(user.id, user.role);
 
     // Update last login
     await db('users').where({ id: user.id }).update({
@@ -146,7 +138,7 @@ const login = async (req, res) => {
           isVerified: user.is_verified,
           preferences: user.preferences
         },
-        token
+        ...tokenPair
       }
     });
 
@@ -479,28 +471,44 @@ const refreshToken = async (req, res) => {
     if (!refreshToken) {
       return res.status(400).json({
         success: false,
-        message: 'Refresh token is required'
+        message: 'Refresh token is required',
+        code: 'MISSING_REFRESH_TOKEN'
       });
     }
 
-    // Verify refresh token
-    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
-    
-    // Generate new access token
-    const newToken = generateToken(decoded.userId, decoded.role);
+    // Use JWT utility to refresh token
+    const getUserCallback = async (userId) => {
+      return await db('users')
+        .select('id', 'role', 'is_active')
+        .where({ id: userId })
+        .first();
+    };
+
+    const tokenPair = await jwtTokenUtil.refreshAccessToken(refreshToken, getUserCallback);
+
+    logger.info(`Token refreshed successfully`);
 
     res.json({
       success: true,
-      data: {
-        token: newToken
-      }
+      message: 'Token refreshed successfully',
+      data: tokenPair
     });
 
   } catch (error) {
     logger.error('Refresh token error:', error);
+    
+    if (error.message.includes('expired')) {
+      return res.status(401).json({
+        success: false,
+        message: 'Refresh token expired',
+        code: 'REFRESH_TOKEN_EXPIRED'
+      });
+    }
+
     res.status(401).json({
       success: false,
-      message: 'Invalid refresh token'
+      message: 'Invalid refresh token',
+      code: 'INVALID_REFRESH_TOKEN'
     });
   }
 };
@@ -527,28 +535,48 @@ const sendEmailOTP = async (req, res) => {
     }
 
     // Send OTP
-    const result = await otpService.sendAndStoreOTP(
-      user.id,
-      email,
-      null,
-      'email'
-    );
+    try {
+      const result = await otpService.sendAndStoreOTP(
+        user.id,
+        email,
+        null,
+        'email'
+      );
 
-    res.json({
-      success: true,
-      message: result.message,
-      data: {
-        expiresIn: result.expiresIn
+      res.json({
+        success: true,
+        message: result.message,
+        data: {
+          expiresIn: result.expiresIn,
+          expiresInMinutes: 3
+        }
+      });
+    } catch (error) {
+      logger.error('Send email OTP error:', error);
+      
+      // Provide more helpful error messages
+      if (error.message.includes('not configured')) {
+        return res.status(503).json({
+          success: false,
+          message: 'Email service is not configured. Please contact support.',
+          code: 'EMAIL_SERVICE_NOT_CONFIGURED'
+        });
       }
-    });
+      
+      if (error.code === 'EAUTH' || error.message.includes('authentication')) {
+        return res.status(503).json({
+          success: false,
+          message: 'Email authentication failed. Please check email configuration.',
+          code: 'EMAIL_AUTH_FAILED'
+        });
+      }
 
-  } catch (error) {
-    logger.error('Send email OTP error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send OTP'
-    });
-  }
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP. Please try again later.',
+        code: 'EMAIL_SEND_FAILED'
+      });
+    }
 };
 
 // Send OTP for SMS verification

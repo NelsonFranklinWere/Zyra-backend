@@ -1,7 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const authController = require('../controllers/authController');
-const authMiddleware = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const passport = require('passport');
 
 const router = express.Router();
@@ -32,8 +32,8 @@ router.post('/send-sms-otp', authController.sendSMSOTP);
 router.post('/verify-otp', authController.verifyOTP);
 
 // Google OAuth routes
-router.get('/google', authController.googleAuth);
-router.get('/google/callback', authController.googleCallback);
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+router.get('/google/callback', passport.authenticate('google', { failureRedirect: '/auth/callback?error=google_auth_failed' }), authController.googleCallback);
 
 // Protected routes
 router.post('/logout', authMiddleware, authController.logout);

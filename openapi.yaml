@@ -1,0 +1,559 @@
+openapi: 3.0.3
+info:
+  title: Zyra API
+  description: Comprehensive AI-powered automation and analytics platform
+  version: 1.0.0
+  contact:
+    name: Zyra Support
+    email: support@zyra.com
+    url: https://zyra.com/support
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3001/api
+    description: Development server
+  - url: https://api.zyra.com/api
+    description: Production server
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+
+paths:
+  # Email Automation Endpoints
+  /automations/email:
+    post:
+      summary: Create email automation
+      description: Create a new email automation workflow
+      tags: [Email Automation]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, triggers, conditions, actions]
+              properties:
+                name:
+                  type: string
+                  example: "Welcome Email Series"
+                description:
+                  type: string
+                  example: "Automated welcome sequence for new users"
+                triggers:
+                  type: object
+                  example:
+                    type: "user_signup"
+                    conditions: ["email_verified"]
+                conditions:
+                  type: object
+                  example:
+                    user_segment: "premium"
+                    timezone: "UTC"
+                actions:
+                  type: object
+                  example:
+                    type: "send_email"
+                    template: "welcome_template"
+                    delay: "1 hour"
+                schedule:
+                  type: object
+                  example:
+                    frequency: "daily"
+                    time: "09:00"
+                settings:
+                  type: object
+                  example:
+                    max_retries: 3
+                    retry_delay: "5 minutes"
+      responses:
+        '201':
+          description: Automation created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    $ref: '#/components/schemas/EmailAutomation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    get:
+      summary: List email automations
+      description: Get list of email automations for the tenant
+      tags: [Email Automation]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: isActive
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: List of automations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/EmailAutomation'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /automations/email/{id}:
+    put:
+      summary: Update email automation
+      description: Update an existing email automation
+      tags: [Email Automation]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                triggers:
+                  type: object
+                conditions:
+                  type: object
+                actions:
+                  type: object
+                schedule:
+                  type: object
+                settings:
+                  type: object
+                isActive:
+                  type: boolean
+      responses:
+        '200':
+          description: Automation updated successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      summary: Delete email automation
+      description: Delete an email automation
+      tags: [Email Automation]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Automation deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /automations/email/{id}/trigger:
+    post:
+      summary: Trigger email automation
+      description: Manually trigger an email automation
+      tags: [Email Automation]
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                triggerPayload:
+                  type: object
+                  example:
+                    manual: true
+                    user_id: "123"
+      responses:
+        '200':
+          description: Automation triggered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      runId:
+                        type: string
+                        format: uuid
+
+  # AI Analysis Endpoints
+  /ai/analyze:
+    post:
+      summary: Analyze content with AI
+      description: Analyze content using AI and return insights
+      tags: [AI Analysis]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceType]
+              properties:
+                sourceType:
+                  type: string
+                  enum: [email, dataset, cv, social]
+                  example: "email"
+                sourceId:
+                  type: string
+                  example: "email_123"
+                options:
+                  type: object
+                  properties:
+                    model:
+                      type: string
+                      default: "gpt-4"
+                    temperature:
+                      type: number
+                      default: 0.7
+                    maxTokens:
+                      type: integer
+                      default: 1000
+      responses:
+        '200':
+          description: Analysis completed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      result:
+                        type: object
+                      confidence:
+                        type: number
+                        format: float
+
+  /ai/generate/cv:
+    post:
+      summary: Generate CV
+      description: Generate a professional CV using AI
+      tags: [AI Generation]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [personalInfo, experience]
+              properties:
+                personalInfo:
+                  type: object
+                  properties:
+                    firstName:
+                      type: string
+                    lastName:
+                      type: string
+                    email:
+                      type: string
+                    phone:
+                      type: string
+                    location:
+                      type: string
+                experience:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      company:
+                        type: string
+                      position:
+                        type: string
+                      duration:
+                        type: string
+                      description:
+                        type: string
+                education:
+                  type: array
+                  items:
+                    type: object
+                skills:
+                  type: array
+                  items:
+                    type: string
+                template:
+                  type: string
+                  default: "modern"
+      responses:
+        '200':
+          description: CV generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      content:
+                        type: string
+                      html:
+                        type: string
+                      tokens:
+                        type: integer
+                      cost:
+                        type: number
+                        format: float
+
+  # Integration Endpoints
+  /integrations/email/inbound:
+    post:
+      summary: Email inbound webhook
+      description: Receive inbound emails via webhook
+      tags: [Integrations]
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                  example: "sender@example.com"
+                to:
+                  type: string
+                  example: "support@zyra.com"
+                subject:
+                  type: string
+                  example: "Customer inquiry"
+                text:
+                  type: string
+                html:
+                  type: string
+                attachments:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '200':
+          description: Email processed successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /integrations/verify:
+    post:
+      summary: Request ownership verification
+      description: Request verification for social media accounts or phone numbers
+      tags: [Integrations]
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [provider, identifier, method]
+              properties:
+                provider:
+                  type: string
+                  enum: [facebook_page, instagram, whatsapp_number]
+                  example: "facebook_page"
+                identifier:
+                  type: string
+                  example: "page_id_123"
+                method:
+                  type: string
+                  enum: [email, sms]
+                  example: "email"
+      responses:
+        '200':
+          description: Verification request sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      verificationId:
+                        type: string
+                        format: uuid
+                      message:
+                        type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  schemas:
+    EmailAutomation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenantId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+        triggers:
+          type: object
+        conditions:
+          type: object
+        actions:
+          type: object
+        schedule:
+          type: object
+        isActive:
+          type: boolean
+        settings:
+          type: object
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        pages:
+          type: integer
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+tags:
+  - name: Email Automation
+    description: Email automation workflows
+  - name: AI Analysis
+    description: AI-powered content analysis
+  - name: AI Generation
+    description: AI content generation
+  - name: Integrations
+    description: Third-party integrations

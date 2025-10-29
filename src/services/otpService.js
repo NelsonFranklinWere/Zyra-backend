@@ -6,22 +6,41 @@ const crypto = require('crypto');
 
 class OTPService {
   constructor() {
-    // Email transporter setup
-    this.emailTransporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: process.env.SMTP_PORT || 587,
-      secure: false,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS
+    // Email transporter setup - only if credentials are provided
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && 
+        process.env.SMTP_USER !== 'your_email@gmail.com') {
+      try {
+        this.emailTransporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: parseInt(process.env.SMTP_PORT) || 587,
+          secure: process.env.SMTP_PORT == 465,
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS
+          }
+        });
+      } catch (error) {
+        logger.warn('Failed to create email transporter:', error.message);
+        this.emailTransporter = null;
       }
-    });
+    } else {
+      this.emailTransporter = null;
+    }
 
-    // Twilio client setup
-    this.twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
+    // Twilio client setup - only if credentials are provided
+    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      try {
+        this.twilioClient = twilio(
+          process.env.TWILIO_ACCOUNT_SID,
+          process.env.TWILIO_AUTH_TOKEN
+        );
+      } catch (error) {
+        logger.warn('Failed to create Twilio client:', error.message);
+        this.twilioClient = null;
+      }
+    } else {
+      this.twilioClient = null;
+    }
   }
 
   // Generate OTP code
@@ -37,8 +56,25 @@ class OTPService {
   // Send OTP via email
   async sendOTPEmail(email, otpCode, userName = 'User') {
     try {
+      // Check if email service is configured
+      if (!process.env.SMTP_USER || !process.env.SMTP_PASS || process.env.SMTP_USER === 'your_email@gmail.com') {
+        logger.error('Email service not configured properly. Please set SMTP_USER and SMTP_PASS in .env file');
+        
+        // In development, log the OTP to console instead of failing
+        if (process.env.NODE_ENV !== 'production') {
+          logger.warn(`⚠️  DEVELOPMENT MODE: Email not configured. OTP for ${email} is: ${otpCode}`);
+          logger.warn(`⚠️  To enable email sending, configure SMTP settings in backend/.env file`);
+          return true; // Return success in dev mode so OTP is still stored
+        }
+        
+        throw new Error('Email service not configured. Please contact administrator.');
+      }
+
+      // Get user's first name if available
+      const displayName = userName !== 'User' ? userName.split(' ')[0] : 'User';
+
       const mailOptions = {
-        from: process.env.SMTP_USER,
+        from: process.env.SMTP_FROM || process.env.SMTP_USER,
         to: email,
         subject: 'Zyra - Email Verification Code',
         html: `
@@ -49,7 +85,7 @@ class OTPService {
             <div style="padding: 30px; background: #f8f9fa;">
               <h2 style="color: #333; margin-bottom: 20px;">Email Verification</h2>
               <p style="color: #666; font-size: 16px; line-height: 1.6;">
-                Hello ${userName},
+                Hello ${displayName},
               </p>
               <p style="color: #666; font-size: 16px; line-height: 1.6;">
                 Thank you for signing up with Zyra! Please use the following verification code to complete your registration:
@@ -58,21 +94,28 @@ class OTPService {
                 <h1 style="color: #667eea; font-size: 32px; letter-spacing: 5px; margin: 0;">${otpCode}</h1>
               </div>
               <p style="color: #666; font-size: 14px;">
-                This code will expire in 10 minutes. If you didn't request this verification, please ignore this email.
+                This code will expire in 3 minutes. If you didn't request this verification, please ignore this email.
               </p>
             </div>
             <div style="background: #333; color: white; padding: 20px; text-align: center; font-size: 14px;">
               <p style="margin: 0;">© 2024 Zyra AI Platform. All rights reserved.</p>
             </div>
           </div>
-        `
+        `,
+        text: `Your Zyra verification code is: ${otpCode}. This code expires in 3 minutes.`
       };
 
       await this.emailTransporter.sendMail(mailOptions);
-      logger.info(`OTP email sent to: ${email}`);
+      logger.info(`OTP email sent successfully to: ${email}`);
       return true;
     } catch (error) {
       logger.error('Failed to send OTP email:', error);
+      
+      // In development, log the OTP even if email fails
+      if (process.env.NODE_ENV !== 'production') {
+        logger.warn(`⚠️  DEVELOPMENT MODE: Email send failed. OTP for ${email} is: ${otpCode}`);
+      }
+      
       throw error;
     }
   }
@@ -80,8 +123,12 @@ class OTPService {
   // Send OTP via SMS
   async sendOTPSMS(phoneNumber, otpCode) {
     try {
+      if (!this.twilioClient) {
+        throw new Error('SMS service not configured. Please set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in .env file');
+      }
+
       const message = await this.twilioClient.messages.create({
-        body: `Your Zyra verification code is: ${otpCode}. This code expires in 10 minutes.`,
+        body: `Your Zyra verification code is: ${otpCode}. This code expires in 3 minutes.`,
         from: process.env.TWILIO_PHONE_NUMBER,
         to: phoneNumber
       });
@@ -97,7 +144,7 @@ class OTPService {
   // Store OTP in database
   async storeOTP(userId, email, phoneNumber, otpCode, verificationType) {
     try {
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      const expiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
 
       await db('otp_verifications').insert({
         user_id: userId,
@@ -214,7 +261,7 @@ class OTPService {
   async sendAndStoreOTP(userId, email, phoneNumber, verificationType) {
     try {
       const otpCode = this.generateOTP();
-      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 3 * 60 * 1000); // 3 minutes
 
       // Store OTP first
       await db('otp_verifications').insert({
@@ -228,15 +275,21 @@ class OTPService {
 
       // Send OTP
       if (verificationType === 'email' && email) {
-        await this.sendOTPEmail(email, otpCode);
+        // Get user name for email
+        const user = await db('users').where({ id: userId }).first();
+        const userName = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email : 'User';
+        
+        await this.sendOTPEmail(email, otpCode, userName);
       } else if (verificationType === 'sms' && phoneNumber) {
         await this.sendOTPSMS(phoneNumber, otpCode);
       }
 
+      logger.info(`OTP sent successfully to ${verificationType === 'email' ? email : phoneNumber}`);
+
       return {
         success: true,
         message: `OTP sent to your ${verificationType}`,
-        expiresIn: 600 // 10 minutes in seconds
+        expiresIn: 180 // 3 minutes in seconds
       };
     } catch (error) {
       logger.error('Failed to send and store OTP:', error);
@@ -245,4 +298,5 @@ class OTPService {
   }
 }
 
+// Always export the service - it will handle missing credentials gracefully
 module.exports = new OTPService();

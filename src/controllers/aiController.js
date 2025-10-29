@@ -1,350 +1,253 @@
-const aiCoreService = require('../services/aiCoreService');
-const { db } = require('../config/database');
-const logger = require('../utils/logger');
-const { validationResult } = require('express-validator');
+const { PrismaClient } = require('@prisma/client');
+const { logger } = require('../utils/logger');
+const { aiService } = require('../services/aiService');
 
-// CV Builder Controller
-const generateCV = async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
+const prisma = new PrismaClient();
 
-    const { personalInfo, experience, education, skills, preferences } = req.body;
-    const userId = req.user.userId;
+class AiController {
+  // Analyze content with AI
+  async analyze(req, res) {
+    try {
+      const { tenantId } = req.user;
+      const { sourceType, sourceId, options = {} } = req.body;
 
-    const userData = {
-      personalInfo,
-      experience,
-      education,
-      skills,
-      userId
-    };
-
-    const result = await aiCoreService.generateCV(userData, preferences);
-
-    // Store user's CV generation
-    await db('user_cvs').insert({
-      user_id: userId,
-      cv_data: JSON.stringify(userData),
-      preferences: JSON.stringify(preferences),
-      generated_cv: result.data.cv,
-      created_at: new Date()
-    });
-
-    logger.info(`CV generated for user: ${userId}`);
-
-    res.json({
-      success: true,
-      message: 'CV generated successfully',
-      data: result.data
-    });
-
-  } catch (error) {
-    logger.error('CV generation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate CV'
-    });
-  }
-};
-
-// Social Media Generator Controller
-const generateSocialPost = async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
-    const { content, platform, preferences } = req.body;
-    const userId = req.user.userId;
-
-    const result = await aiCoreService.generateSocialPost(content, platform, preferences);
-
-    // Store user's social post generation
-    await db('user_social_posts').insert({
-      user_id: userId,
-      content: JSON.stringify(content),
-      platform,
-      preferences: JSON.stringify(preferences),
-      generated_post: result.data.post,
-      engagement_score: result.data.engagement_score,
-      created_at: new Date()
-    });
-
-    logger.info(`Social post generated for user: ${userId}`);
-
-    res.json({
-      success: true,
-      message: 'Social post generated successfully',
-      data: result.data
-    });
-
-  } catch (error) {
-    logger.error('Social post generation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate social post'
-    });
-  }
-};
-
-// WhatsApp Automation Controller
-const processWhatsAppMessage = async (req, res) => {
-  try {
-    const { message, context } = req.body;
-    const userId = req.user.userId;
-
-    if (!message) {
-      return res.status(400).json({
-        success: false,
-        message: 'Message is required'
-      });
-    }
-
-    const result = await aiCoreService.processWhatsAppMessage(message, context);
-
-    // Store WhatsApp interaction
-    await db('whatsapp_interactions').insert({
-      user_id: userId,
-      incoming_message: message,
-      context: JSON.stringify(context),
-      ai_response: result.data.response,
-      intent: result.data.intent,
-      confidence: result.data.confidence,
-      created_at: new Date()
-    });
-
-    logger.info(`WhatsApp message processed for user: ${userId}`);
-
-    res.json({
-      success: true,
-      message: 'WhatsApp message processed successfully',
-      data: result.data
-    });
-
-  } catch (error) {
-    logger.error('WhatsApp processing error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process WhatsApp message'
-    });
-  }
-};
-
-// Data Insights Controller
-const generateInsights = async (req, res) => {
-  try {
-    const { data, analysisType } = req.body;
-    const userId = req.user.userId;
-
-    if (!data) {
-      return res.status(400).json({
-        success: false,
-        message: 'Data is required'
-      });
-    }
-
-    const result = await aiCoreService.generateInsights(data, analysisType);
-
-    // Store insights generation
-    await db('user_insights').insert({
-      user_id: userId,
-      input_data: JSON.stringify(data),
-      analysis_type: analysisType,
-      insights: result.data.insights,
-      key_metrics: JSON.stringify(result.data.key_metrics),
-      recommendations: JSON.stringify(result.data.recommendations),
-      confidence_score: result.data.confidence_score,
-      created_at: new Date()
-    });
-
-    logger.info(`Insights generated for user: ${userId}`);
-
-    res.json({
-      success: true,
-      message: 'Insights generated successfully',
-      data: result.data
-    });
-
-  } catch (error) {
-    logger.error('Insights generation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate insights'
-    });
-  }
-};
-
-// Audience Targeting Controller
-const generateAudienceSegments = async (req, res) => {
-  try {
-    const { criteria, preferences } = req.body;
-    const userId = req.user.userId;
-
-    if (!criteria) {
-      return res.status(400).json({
-        success: false,
-        message: 'Targeting criteria is required'
-      });
-    }
-
-    const result = await aiCoreService.generateAudienceSegments(criteria, preferences);
-
-    // Store audience targeting generation
-    await db('user_audience_segments').insert({
-      user_id: userId,
-      criteria: JSON.stringify(criteria),
-      preferences: JSON.stringify(preferences),
-      segments: result.data.segments,
-      targeting_strategies: JSON.stringify(result.data.targeting_strategies),
-      engagement_tips: JSON.stringify(result.data.engagement_tips),
-      market_potential: result.data.market_potential,
-      created_at: new Date()
-    });
-
-    logger.info(`Audience segments generated for user: ${userId}`);
-
-    res.json({
-      success: true,
-      message: 'Audience segments generated successfully',
-      data: result.data
-    });
-
-  } catch (error) {
-    logger.error('Audience targeting error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate audience segments'
-    });
-  }
-};
-
-// Get AI Generations History
-const getAIGenerations = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { module, limit = 10, offset = 0 } = req.query;
-
-    let query = db('ai_generations')
-      .where({ user_id: userId })
-      .orderBy('created_at', 'desc')
-      .limit(parseInt(limit))
-      .offset(parseInt(offset));
-
-    if (module) {
-      query = query.where({ module });
-    }
-
-    const generations = await query;
-
-    res.json({
-      success: true,
-      data: {
-        generations,
-        pagination: {
-          limit: parseInt(limit),
-          offset: parseInt(offset),
-          total: generations.length
+      // Create analysis request
+      const analysisRequest = await prisma.aiAnalysisRequest.create({
+        data: {
+          tenantId,
+          sourceType,
+          sourceId,
+          payload: { sourceType, sourceId, options },
+          modelUsed: options.model || 'gpt-4',
+          params: options
         }
-      }
-    });
-
-  } catch (error) {
-    logger.error('Get AI generations error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch AI generations'
-    });
-  }
-};
-
-// Get AI Performance Stats
-const getAIPerformance = async (req, res) => {
-  try {
-    const userId = req.user.userId;
-
-    // Get performance stats for the user
-    const stats = await db.raw(`
-      SELECT 
-        module,
-        COUNT(*) as total_generations,
-        AVG(CAST(metadata->>'confidence' AS FLOAT)) as avg_confidence,
-        MAX(created_at) as last_used
-      FROM ai_generations 
-      WHERE user_id = ? 
-      GROUP BY module
-    `, [userId]);
-
-    // Get recent activity
-    const recentActivity = await db('ai_generations')
-      .where({ user_id: userId })
-      .orderBy('created_at', 'desc')
-      .limit(5);
-
-    res.json({
-      success: true,
-      data: {
-        performance_stats: stats.rows,
-        recent_activity: recentActivity
-      }
-    });
-
-  } catch (error) {
-    logger.error('Get AI performance error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch AI performance data'
-    });
-  }
-};
-
-// Update AI Preferences
-const updateAIPreferences = async (req, res) => {
-  try {
-    const { preferences } = req.body;
-    const userId = req.user.userId;
-
-    await db('user_ai_preferences')
-      .where({ user_id: userId })
-      .update({
-        preferences: JSON.stringify(preferences),
-        updated_at: new Date()
       });
 
-    logger.info(`AI preferences updated for user: ${userId}`);
+      // Queue AI analysis
+      const result = await aiService.analyzeContent(analysisRequest.id, {
+        sourceType,
+        sourceId,
+        options
+      });
 
-    res.json({
-      success: true,
-      message: 'AI preferences updated successfully'
-    });
+      // Update with result
+      await prisma.aiAnalysisRequest.update({
+        where: { id: analysisRequest.id },
+        data: {
+          result: result.analysis,
+          confidence: result.confidence
+        }
+      });
 
-  } catch (error) {
-    logger.error('Update AI preferences error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update AI preferences'
-    });
+      logger.info('AI analysis completed', { 
+        analysisId: analysisRequest.id, 
+        tenantId,
+        sourceType 
+      });
+
+      res.json({ 
+        success: true, 
+        data: { 
+          id: analysisRequest.id,
+          result: result.analysis,
+          confidence: result.confidence
+        }
+      });
+    } catch (error) {
+      logger.error('Error in AI analysis:', error);
+      res.status(500).json({ success: false, message: 'AI analysis failed' });
+    }
   }
-};
 
-module.exports = {
-  generateCV,
-  generateSocialPost,
-  processWhatsAppMessage,
-  generateInsights,
-  generateAudienceSegments,
-  getAIGenerations,
-  getAIPerformance,
-  updateAIPreferences
-};
+  // Get analysis result
+  async getAnalysis(req, res) {
+    try {
+      const { tenantId } = req.user;
+      const { id } = req.params;
+
+      const analysis = await prisma.aiAnalysisRequest.findFirst({
+        where: { id, tenantId }
+      });
+
+      if (!analysis) {
+        return res.status(404).json({ success: false, message: 'Analysis not found' });
+      }
+
+      res.json({ success: true, data: analysis });
+    } catch (error) {
+      logger.error('Error getting AI analysis:', error);
+      res.status(500).json({ success: false, message: 'Failed to get analysis' });
+    }
+  }
+
+  // Generate CV
+  async generateCV(req, res) {
+    try {
+      const { tenantId } = req.user;
+      const { personalInfo, experience, education, skills, template = 'modern' } = req.body;
+
+      const cvData = {
+        personalInfo,
+        experience,
+        education,
+        skills,
+        template
+      };
+
+      const result = await aiService.generateCV(cvData);
+      
+      // Store generation history
+      await prisma.aiGenerationHistory.create({
+        data: {
+          tenantId,
+          prompt: JSON.stringify(cvData),
+          response: JSON.stringify(result),
+          model: 'gpt-4',
+          tokens: result.tokens,
+          cost: result.cost
+        }
+      });
+
+      logger.info('CV generated', { tenantId, template });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      logger.error('Error generating CV:', error);
+      res.status(500).json({ success: false, message: 'CV generation failed' });
+    }
+  }
+
+  // Generate social media content
+  async generateSocialContent(req, res) {
+    try {
+      const { tenantId } = req.user;
+      const { 
+        platform, 
+        topic, 
+        tone, 
+        targetAudience, 
+        includeHashtags = true,
+        includeCallToAction = true 
+      } = req.body;
+
+      const contentData = {
+        platform,
+        topic,
+        tone,
+        targetAudience,
+        includeHashtags,
+        includeCallToAction
+      };
+
+      const result = await aiService.generateSocialContent(contentData);
+      
+      // Store generation history
+      await prisma.aiGenerationHistory.create({
+        data: {
+          tenantId,
+          prompt: JSON.stringify(contentData),
+          response: JSON.stringify(result),
+          model: 'gpt-4',
+          tokens: result.tokens,
+          cost: result.cost
+        }
+      });
+
+      logger.info('Social content generated', { tenantId, platform });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      logger.error('Error generating social content:', error);
+      res.status(500).json({ success: false, message: 'Content generation failed' });
+    }
+  }
+
+  // Generate persona from data
+  async generatePersona(req, res) {
+    try {
+      const { tenantId } = req.user;
+      const { dataSource, sampleSize = 100, criteria = {} } = req.body;
+
+      const personaData = {
+        dataSource,
+        sampleSize,
+        criteria
+      };
+
+      const result = await aiService.generatePersona(personaData);
+      
+      // Store generation history
+      await prisma.aiGenerationHistory.create({
+        data: {
+          tenantId,
+          prompt: JSON.stringify(personaData),
+          response: JSON.stringify(result),
+          model: 'gpt-4',
+          tokens: result.tokens,
+          cost: result.cost
+        }
+      });
+
+      logger.info('Persona generated', { tenantId, dataSource });
+      res.json({ success: true, data: result });
+    } catch (error) {
+      logger.error('Error generating persona:', error);
+      res.status(500).json({ success: false, message: 'Persona generation failed' });
+    }
+  }
+
+  // Provide feedback on AI generation
+  async provideFeedback(req, res) {
+    try {
+      const { id } = req.params;
+      const { feedback } = req.body; // 1 for thumbs up, -1 for thumbs down
+
+      await prisma.aiGenerationHistory.update({
+        where: { id },
+        data: { feedback }
+      });
+
+      logger.info('AI feedback recorded', { generationId: id, feedback });
+      res.json({ success: true, message: 'Feedback recorded' });
+    } catch (error) {
+      logger.error('Error recording feedback:', error);
+      res.status(500).json({ success: false, message: 'Failed to record feedback' });
+    }
+  }
+
+  // Get AI generation history
+  async getGenerationHistory(req, res) {
+    try {
+      const { tenantId } = req.user;
+      const { page = 1, limit = 10, model } = req.query;
+
+      const where = { tenantId };
+      if (model) {
+        where.model = model;
+      }
+
+      const history = await prisma.aiGenerationHistory.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: parseInt(limit),
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const total = await prisma.aiGenerationHistory.count({ where });
+
+      res.json({
+        success: true,
+        data: history,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      });
+    } catch (error) {
+      logger.error('Error getting generation history:', error);
+      res.status(500).json({ success: false, message: 'Failed to get history' });
+    }
+  }
+}
+
+module.exports = new AiController();

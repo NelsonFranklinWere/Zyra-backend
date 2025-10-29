@@ -1,8 +1,8 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
 const { db } = require('../config/database');
-const logger = require('../utils/logger');
-const jwt = require('jsonwebtoken');
+const { logger } = require('../utils/logger');
+const jwtTokenUtil = require('../utils/jwtTokenUtil');
 
 class GoogleAuthService {
   constructor() {
@@ -23,44 +23,28 @@ class GoogleAuthService {
         const lastName = name.familyName;
         const avatarUrl = photos[0]?.value;
 
-        // Check if user exists
-        let user = await db('users').where({ google_id: id }).first();
+        // Check if user exists with same email
+        let user = await db('users').where({ email }).first();
         
         if (!user) {
-          // Check if user exists with same email
-          user = await db('users').where({ email }).first();
-          
-          if (user) {
-            // Link Google account to existing user
-            await db('users')
-              .where({ id: user.id })
-              .update({
-                google_id: id,
-                google_email: email,
-                avatar_url: avatarUrl,
-                updated_at: new Date()
-              });
-          } else {
-            // Create new user
-            [user] = await db('users').insert({
-              google_id: id,
-              email,
-              google_email: email,
-              first_name: firstName,
-              last_name: lastName,
-              avatar_url: avatarUrl,
-              is_verified: true, // Google users are pre-verified
-              is_active: true,
-              role: 'user',
-              preferences: {
-                theme: 'dark',
-                notifications: true,
-                language: 'en'
-              }
-            }).returning(['id', 'email', 'first_name', 'last_name', 'role', 'is_active', 'is_verified', 'created_at']);
-          }
+          // Create new user (without Google OAuth specific fields for now)
+          [user] = await db('users').insert({
+            email,
+            first_name: firstName,
+            last_name: lastName,
+            password_hash: 'google_oauth_user', // Placeholder for Google OAuth users
+            is_verified: true, // Google users are pre-verified
+            is_active: true,
+            role: 'user',
+            preferences: {
+              theme: 'dark',
+              notifications: true,
+              language: 'en'
+            }
+          }).returning(['id', 'email', 'first_name', 'last_name', 'role', 'is_active', 'is_verified', 'created_at']);
         }
 
+        logger.info('Google OAuth strategy completed successfully:', { userId: user.id, email: user.email });
         return done(null, user);
       } catch (error) {
         logger.error('Google OAuth error:', error);
@@ -86,27 +70,28 @@ class GoogleAuthService {
 
   // Generate JWT token for Google user
   generateToken(userId, role = 'user') {
-    return jwt.sign(
-      { userId, role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
-    );
+    return jwtTokenUtil.generateToken(userId, role);
   }
 
   // Handle Google OAuth callback
   async handleGoogleCallback(req, res) {
     try {
+      logger.info('Google callback received:', { user: req.user, query: req.query });
+      
       const user = req.user;
       
       if (!user) {
-        return res.redirect(`${process.env.FRONTEND_URL}/login?error=google_auth_failed`);
+        logger.error('No user found in Google callback');
+        return res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=google_auth_failed`);
       }
+
+      logger.info('User found in Google callback:', { userId: user.id, email: user.email });
 
       // Generate JWT token
       const token = this.generateToken(user.id, user.role);
 
-      // Redirect to frontend with token
-      const redirectUrl = `${process.env.FRONTEND_URL}/dashboard?token=${token}&user=${encodeURIComponent(JSON.stringify({
+      // Redirect to frontend callback page with token
+      const redirectUrl = `${process.env.FRONTEND_URL}/auth/callback?token=${token}&user=${encodeURIComponent(JSON.stringify({
         id: user.id,
         email: user.email,
         firstName: user.first_name,
@@ -116,10 +101,11 @@ class GoogleAuthService {
         avatarUrl: user.avatar_url
       }))}`;
 
+      logger.info('Redirecting to frontend:', { redirectUrl });
       res.redirect(redirectUrl);
     } catch (error) {
       logger.error('Google callback error:', error);
-      res.redirect(`${process.env.FRONTEND_URL}/login?error=server_error`);
+      res.redirect(`${process.env.FRONTEND_URL}/auth/callback?error=server_error`);
     }
   }
 
@@ -177,4 +163,16 @@ class GoogleAuthService {
   }
 }
 
-module.exports = new GoogleAuthService();
+// Only instantiate if Google OAuth is properly configured
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  module.exports = new GoogleAuthService();
+} else {
+  // Export a mock service for development
+  module.exports = {
+    setupPassport: () => {},
+    authenticate: () => {},
+    handleCallback: () => {},
+    linkAccount: () => {},
+    unlinkAccount: () => {}
+  };
+}

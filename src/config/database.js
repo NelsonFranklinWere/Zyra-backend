@@ -1,5 +1,5 @@
 const knex = require('knex');
-const logger = require('../utils/logger');
+const { logger } = require('../utils/logger');
 
 const dbConfig = {
   client: 'pg',
@@ -37,9 +37,9 @@ const connectDB = async () => {
     await db.raw('SELECT 1');
     logger.info('✅ Database connected successfully');
     
-    // Run migrations
-    await db.migrate.latest();
-    logger.info('✅ Database migrations completed');
+    // Run migrations (commented out since tables already exist)
+    // await db.migrate.latest();
+    // logger.info('✅ Database migrations completed');
     
     return db;
   } catch (error) {

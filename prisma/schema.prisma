@@ -1,0 +1,340 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  domain    String?  @unique
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users                User[]
+  emailAutomations     EmailAutomation[]
+  emailAutomationRuns  EmailAutomationRun[]
+  emailInbox           EmailInbox[]
+  aiAnalysisRequests   AiAnalysisRequest[]
+  reports              Report[]
+  reportRuns           ReportRun[]
+  dbSyncJobs           DbSyncJob[]
+  syncJobRuns          SyncJobRun[]
+  paymentAccounts      PaymentAccount[]
+  ownershipVerifications OwnershipVerification[]
+  userConsents         UserConsent[]
+  dataSources          DataSource[]
+
+  @@map("tenants")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  tenantId  String
+  email     String
+  firstName String?
+  lastName  String?
+  role      String   @default("user")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userConsents  UserConsent[]
+
+  @@unique([tenantId, email])
+  @@map("users")
+}
+
+model EmailAutomation {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  description String?
+  triggers    Json
+  conditions  Json
+  actions     Json
+  schedule    Json?
+  isActive    Boolean  @default(true)
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant EmailAutomationRun[] @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   EmailAutomationRun[]
+
+  @@map("email_automations")
+}
+
+model EmailAutomationRun {
+  id             String   @id @default(uuid())
+  automationId   String
+  tenantId       String
+  triggerPayload Json?
+  status         AutomationStatus @default(PENDING)
+  result         Json?
+  startedAt      DateTime?
+  finishedAt     DateTime?
+  error          String?
+
+  // Relations
+  automation EmailAutomation @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("email_automation_runs")
+}
+
+model EmailInbox {
+  id          String   @id @default(uuid())
+  tenantId    String
+  fromEmail   String
+  toEmail     String
+  subject     String
+  bodyText    String?
+  bodyHtml    String?
+  attachments Json?
+  receivedAt  DateTime @default(now())
+  processed   Boolean  @default(false)
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("email_inbox")
+}
+
+model AiAnalysisRequest {
+  id          String   @id @default(uuid())
+  tenantId    String
+  sourceType  String
+  sourceId    String?
+  payload     Json
+  modelUsed   String
+  params      Json?
+  result      Json?
+  confidence  Float?
+  createdAt   DateTime @default(now())
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("ai_analysis_requests")
+}
+
+model Report {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  type        ReportType
+  frequency   ReportFrequency?
+  query       Json
+  lastRunAt   DateTime?
+  recipients  Json?
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  tenant Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   ReportRun[]
+
+  @@map("reports")
+}
+
+model ReportRun {
+  id        String      @id @default(uuid())
+  reportId  String
+  tenantId  String
+  runTime   DateTime    @default(now())
+  resultUrl String?
+  status    ReportStatus @default(PENDING)
+  error     String?
+
+  // Relations
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("report_runs")
+}
+
+model DbSyncJob {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  sourceConfig  Json
+  targetConfig  Json
+  schedule      Json?
+  lastRun       DateTime?
+  status        SyncStatus @default(INACTIVE)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  runs   SyncJobRun[]
+
+  @@map("db_sync_jobs")
+}
+
+model SyncJobRun {
+  id        String   @id @default(uuid())
+  jobId     String
+  tenantId  String
+  summary   Json?
+  errors    Json?
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+
+  // Relations
+  job  DbSyncJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  tenant Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("sync_job_runs")
+}
+
+model PaymentAccount {
+  id         String           @id @default(uuid())
+  tenantId   String
+  provider   PaymentProvider
+  credentials Json
+  verified   Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("payment_accounts")
+}
+
+model OwnershipVerification {
+  id             String                @id @default(uuid())
+  tenantId       String
+  accountType    String
+  identifier     String
+  challengeMethod ChallengeMethod
+  challengeToken String
+  status         VerificationStatus    @default(PENDING)
+  createdAt      DateTime              @default(now())
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("ownership_verifications")
+}
+
+model UserConsent {
+  id          String   @id @default(uuid())
+  tenantId    String
+  userId      String
+  consentType String
+  granted     Boolean
+  grantedAt   DateTime @default(now())
+  metadata    Json?
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId, consentType])
+  @@map("user_consents")
+}
+
+model DataSource {
+  id        String   @id @default(uuid())
+  tenantId  String
+  name      String
+  type      String
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("data_sources")
+}
+
+model AiPromptTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  systemPrompt String
+  userPrompt  String?
+  examples    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("ai_prompt_templates")
+}
+
+model AiGenerationHistory {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  prompt      String
+  response    String
+  model       String
+  tokens      Int?
+  cost        Float?
+  feedback    Int? // 1 for thumbs up, -1 for thumbs down
+  createdAt   DateTime @default(now())
+
+  @@map("ai_generation_history")
+}
+
+// Enums
+enum AutomationStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum ReportType {
+  SCHEDULED
+  AD_HOC
+}
+
+enum ReportFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ReportStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+enum SyncStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+enum PaymentProvider {
+  MPESA
+  STRIPE
+  BANK
+}
+
+enum ChallengeMethod {
+  EMAIL
+  SMS
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
