@@ -6,6 +6,7 @@ const { logger } = require('../utils/logger');
 const crypto = require('crypto');
 const otpService = require('../services/otpService');
 const googleAuthService = require('../services/googleAuthService');
+const refreshTokenService = require('../services/refreshTokenService');
 
 // Generate JWT token (backward compatibility wrapper)
 const generateToken = (userId, role = 'user') => {
@@ -53,7 +54,8 @@ const register = async (req, res) => {
     }).returning(['id', 'email', 'first_name', 'last_name', 'role', 'is_active', 'is_verified', 'created_at']);
 
     // Generate token pair (access + refresh)
-    const tokenPair = jwtTokenUtil.generateTokenPair(user.id, user.role);
+    const accessToken = jwtTokenUtil.generateToken(user.id, user.role);
+    const refreshToken = await refreshTokenService.createRefreshToken(user.id);
 
     logger.info(`New user registered: ${email}`);
 
@@ -62,7 +64,10 @@ const register = async (req, res) => {
       message: 'User registered successfully',
       data: {
         user,
-        ...tokenPair
+        accessToken,
+        refreshToken: refreshToken.token,
+        expiresIn: parseInt(process.env.JWT_EXPIRES_IN_MS) / 1000 || 604800,
+        tokenType: 'Bearer'
       }
     });
 
@@ -115,8 +120,9 @@ const login = async (req, res) => {
       });
     }
 
-    // Generate token pair (access + refresh)
-    const tokenPair = jwtTokenUtil.generateTokenPair(user.id, user.role);
+    // Generate access token and create refresh token in DB
+    const accessToken = jwtTokenUtil.generateToken(user.id, user.role);
+    const refreshToken = await refreshTokenService.createRefreshToken(user.id);
 
     // Update last login
     await db('users').where({ id: user.id }).update({
@@ -138,7 +144,10 @@ const login = async (req, res) => {
           isVerified: user.is_verified,
           preferences: user.preferences
         },
-        ...tokenPair
+        accessToken,
+        refreshToken: refreshToken.token,
+        expiresIn: parseInt(process.env.JWT_EXPIRES_IN_MS) / 1000 || 604800,
+        tokenType: 'Bearer'
       }
     });
 
@@ -292,7 +301,16 @@ const changePassword = async (req, res) => {
 // Logout
 const logout = async (req, res) => {
   try {
-    // In a more sophisticated setup, you might want to blacklist the token
+    const { refreshToken } = req.body;
+    
+    // Revoke refresh token if provided
+    if (refreshToken) {
+      await refreshTokenService.revokeToken(refreshToken);
+    } else {
+      // Revoke all user tokens if no specific token provided
+      await refreshTokenService.revokeAllUserTokens(req.user.userId);
+    }
+    
     logger.info(`User logged out: ${req.user.userId}`);
     
     res.json({
@@ -476,15 +494,8 @@ const refreshToken = async (req, res) => {
       });
     }
 
-    // Use JWT utility to refresh token
-    const getUserCallback = async (userId) => {
-      return await db('users')
-        .select('id', 'role', 'is_active')
-        .where({ id: userId })
-        .first();
-    };
-
-    const tokenPair = await jwtTokenUtil.refreshAccessToken(refreshToken, getUserCallback);
+    // Use refresh token service to refresh access token
+    const tokenPair = await refreshTokenService.refreshAccessToken(refreshToken);
 
     logger.info(`Token refreshed successfully`);
 
@@ -497,10 +508,10 @@ const refreshToken = async (req, res) => {
   } catch (error) {
     logger.error('Refresh token error:', error);
     
-    if (error.message.includes('expired')) {
+    if (error.message.includes('expired') || error.message.includes('Invalid')) {
       return res.status(401).json({
         success: false,
-        message: 'Refresh token expired',
+        message: error.message || 'Refresh token expired or invalid',
         code: 'REFRESH_TOKEN_EXPIRED'
       });
     }

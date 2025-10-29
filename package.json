@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "build": "tsc",
+    "build": "echo 'No build step needed for JavaScript backend'",
     "test": "jest",
     "lint": "eslint src/",
     "migrate": "knex migrate:latest",

@@ -77,12 +77,68 @@ app.use(morgan('combined', {
   stream: { write: message => logger.info(message.trim()) }
 }));
 
-// Health check endpoint
+// Health check endpoints
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    environment: process.env.NODE_ENV
+  });
+});
+
+// Liveness probe (simple check if app is running)
+app.get('/health/live', (req, res) => {
+  res.status(200).json({
+    status: 'alive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Readiness probe (check if app is ready to serve traffic)
+app.get('/health/ready', async (req, res) => {
+  try {
+    const { checkDatabaseHealth } = require('./config/database');
+    const dbHealth = await checkDatabaseHealth();
+    
+    const isReady = dbHealth.status === 'healthy';
+    
+    res.status(isReady ? 200 : 503).json({
+      status: isReady ? 'ready' : 'not ready',
+      timestamp: new Date().toISOString(),
+      checks: {
+        database: dbHealth,
+        memory: {
+          used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+          total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+          unit: 'MB'
+        }
+      }
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'not ready',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
+});
+
+// Metrics endpoint
+app.get('/metrics', (req, res) => {
+  res.json({
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: {
+      used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024),
+      rss: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      unit: 'MB'
+    },
+    cpu: {
+      user: process.cpuUsage().user,
+      system: process.cpuUsage().system
+    },
     environment: process.env.NODE_ENV
   });
 });
